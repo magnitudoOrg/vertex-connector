@@ -11,10 +11,11 @@ function log() {
 } 
 
 /**
- * Vertex Connector 1.0
+ * Vertex Connector 1.1
  * Connect the vertices of the solid. Try to surround the polygons to get extra points. Avoid your vertices becoming isolated.
  * 
- * Thanks to Viktor Kovacs for platonic and archimedean solid generation code!
+ * My special thanks goes to Viktor Kovacs http://kovacsv.hu 
+ * for platonic/archimedean solid generation and projection code!
  * 
  * Code needs a cleanup, but no time left unitl JS13kgames deadline 13:00 ....
  * 
@@ -33,6 +34,7 @@ var Game = function(canvas, menu) {
     this.scorePlayer2 = 0; 
     this.aiDepth = 3;
     this.level = 1;
+    this.frameCnt = 0;
 };  
 
 
@@ -58,41 +60,16 @@ Game.prototype.init = function() {
             0, 4 / 3, eyeDirection, -eyeDirection,
             0, 0, -eyeDistance, eyeDistance
         ],
-        val = 0.5 + Math.sqrt (5) / 2,
-        vertexTable = [0, 1, -1, val, -val, 1 / val, -1 / val], // vertex coordinate values
-        verticesPool = '111221212122300400030040003004013014023024130140230240301302401402112121211222053054063064530540630640305405306406', // indices to vertexTable
-        shapes = [ // indices to vertices
-            '013021032123', // tetrahedron
-            '468479487496569578586597', // octahedron
-            ':<B:>@:@D:B>:D<;=E;>C;@>;C=;E@<?B<A?<DA=?A=AE=C?>BC@ED?CBADE', // icosahedron
-            '0F2H0G3F0H1GF3I2G1I3H2I1', // hexahedron
-            '0JLGR0RTFN0NPHJFK2PNFT3MKGL1QOGO3TRHP2USHS1LJ3OQIM2KMIU1SUIQ' // dodecahedron
-        ],
-        activeShape = shapes[this.s],
-        shape, x, y, z, hash, lastHash, activeShapeIdx, vertexIdx,
+        
         vertices = {}, // use as hashmap
         polygons = [],
-        polygonVertexCnt = this.s < 3 ? 3 : this.s + 1,
+        polygonVertexCnt,
         i, j, vertexId, tmpPolygon, nId, solidObj, item;  
      
      if (this.cmdQueueTimer) {
          window.clearTimeout(this.cmdQueueTimer);
      }   
     
-    // TODO code can be cleanuped, platonic solids no longer needed    
-    for (activeShapeIdx in activeShape) {
-        vertexIdx = 3*activeShape.charCodeAt (activeShapeIdx) - 144;
-        x = vertexTable[verticesPool[vertexIdx]];
-        y = vertexTable[verticesPool[vertexIdx+1]];
-        z = vertexTable[verticesPool[vertexIdx+2]];
-        hash = 1000000*x + 1000*y + z;        
-        vertices[hash] = {x: x, y: y, z: z, px: null, py: null, active: 0, neighbours: {}, polygons: []};  
-        if (activeShapeIdx % polygonVertexCnt === 0) {
-            tmpPolygon = [];
-            polygons.push(tmpPolygon);    
-        }       
-        tmpPolygon.push(hash);
-    } 
     
     // build solid object
     if (this.solidType === 0) {
@@ -154,36 +131,33 @@ Game.prototype.init = function() {
     this.scorePlayer1 = 0;
     this.scorePlayer2 = 0; 
     this.winText = null;  
-
-    canvas.ondblclick = function () {
-        self.s = ++self.s % 5;
-        self.activeVertex = [];
-        self.init();
-    };    
+    
     
     canvas.onmousemove = function (event) {
         var rect = self.canvas.getBoundingClientRect(),
             x = event.clientX - rect.left,
             y = event.clientY - rect.top,
             vertices = self.vertices, 
-            v, vIdx;
+            v, vKey;
         
-        for (vIdx in vertices) {
-            v = vertices[vIdx];
+        for (vKey in vertices) {
+            v = vertices[vKey];
             if (self.eqTolerance(v.px, x) && self.eqTolerance(v.py, y) && v.active === 0) {
                 self.hoveredVertex = v;
+                //self.canvas.style.cursor = 'pointer';
                 break;    
             } else {
-                self.hoveredVertex = null;   
+                self.hoveredVertex = null;  
+                //self.canvas.style.cursor = 'default'; 
             }
         }
         
-        if (x > 650) {
-            self.rSpeed = 0.009;    
-        } else if (x < 150) {
-            self.rSpeed = -0.009;     
+        if (x > 600) {
+            self.rSpeed = -0.009;    
+        } else if (x < 200) {
+            self.rSpeed = +0.009;     
         } else {
-            self.rSpeed = 0.001;    
+            self.rSpeed = 0.0005;    
         }
     };
     
@@ -192,34 +166,27 @@ Game.prototype.init = function() {
             x = event.clientX - rect.left,
             y = event.clientY - rect.top,
             vertices = self.vertices, 
-            v, vIdx, winDiff;
+            v, vKey;
+           
+        // after win - click to play next level    
+        if (self.winText) {
+            self.newGame();
+            return;   
+        }    
         
-        for (vIdx in vertices) {
-            v = vertices[vIdx];
+        for (vKey in vertices) {
+            v = vertices[vKey];
             if (self.eqTolerance(v.px, x) && self.eqTolerance(v.py, y) && v.active === 0) {
                 
                 self.doMove(self.player, v);                
                 self.player *= -1;
                 
+                self.winCheck();  // (needed if solid vertices count is odd)
+                
                 log(self.aiMove(self.player, self.level-1));
                 self.player *= -1;
                 
-                // win check
-                if (self.movesLeft() === 0) {
-                    winDiff = self.scorePlayer1 - self.scorePlayer2;
-                    if (winDiff > 0) {
-                        self.winText = 'Congratulations! You reached the next level!'; 
-                        self.level++; 
-                        if (typeof localStorage !== "undefined") {
-                            localStorage.setItem("vcLevel", self.level);
-                        } 
-                        
-                    } else if (winDiff < 0) {
-                        self.winText = 'Computer wins!';   
-                    } else {
-                        self.winText = 'Game ends in a draw!';    
-                    }
-                }
+                self.winCheck();              
                 
                 //log('HIT ON ', x, y);  
                 break; 
@@ -228,6 +195,26 @@ Game.prototype.init = function() {
     };
       
 }; 
+
+Game.prototype.winCheck = function() {
+    var self = this, winDiff;
+    if (self.movesLeft() === 0) {
+        winDiff = self.scorePlayer1 - self.scorePlayer2;
+        if (winDiff > 0) {
+            self.winText = 'Congratulations! Next level!'; 
+            self.level++; 
+            if (typeof localStorage !== "undefined") {
+                localStorage.setItem("vcLevel", self.level);
+            } 
+            
+        } else if (winDiff < 0) {
+            self.winText = 'Computer wins!';   
+        } else {
+            self.winText = 'Game ends in a draw!';    
+        }
+        //window.setTimeout(function(){self.showMenu();}, 2000);
+    }
+};
 
 
 Game.prototype.newGame = function() {
@@ -246,7 +233,7 @@ Game.prototype.hideMenu = function() {
 Game.prototype.showMenu = function() {
     var self = this;  
     self.menu.style.display = 'block';
-    window.setTimeout(function() { self.menu.style.opacity = 0.8; }, 100);
+    window.setTimeout(function() { self.menu.style.opacity = 0.9; }, 100);
 };
 
 
@@ -475,113 +462,146 @@ Game.prototype.render = function() {
         size = this.size,
         i, j, k, l, m, n, 
         vertex, transVertex, projected, projectedCoords,
-        vertexId, hue, transp, w;
+        vertexKey, hue, transp, w, lastVertex, polygonPlayerCnt;
             
-    // draw shape    
+    // clear canvas  
     ctx.clearRect (0, 0, this.w, this.h);
-    ctx.lineWidth = 0.2;
+    ctx.lineWidth = 1.0;
+    
     // draw score
-    ctx.fillStyle = 'hsla(' + this.getPlayerHue(1) + ',99%, 60%, 1.0)';
+    ctx.fillStyle = 'hsla(' + this.getPlayerHue(1) + ',99%, 50%, 1.0)';
     ctx.textAlign = "left";
     ctx.fillText(this.scorePlayer1, 30, 50);
-    ctx.fillStyle = 'hsla(' + this.getPlayerHue(-1) + ',99%, 60%, 1.0)';
+    ctx.fillStyle = 'hsla(' + this.getPlayerHue(-1) + ',99%, 50%, 1.0)';
     ctx.textAlign = "right";
     ctx.fillText(this.scorePlayer2, 770, 50);
     
     ctx.fillStyle = '#333';
     ctx.textAlign = "center";
     ctx.fillText('Level ' + this.level, 400, 50);
-
+    
+    // draw connection lines
     i = polygons.length;
-    while (i--) {
-        // draw polygons
-        ctx.beginPath ();
-        projectedCoords = [];
-        polygonVertexCnt = polygons[i].length;
+    while (i--) {             
+        polygonVertexCnt = polygons[i].length;        
         j = polygonVertexCnt + 1;
-
-        while (j--) {
-            // calculate rotated vertex
-            vertexId = polygons[i][j % polygonVertexCnt];
-            vertex = vertices[vertexId];
-            l = vertex.x; 
-            m = vertex.y;
-            n = vertex.z;   
-            transVertex = [l * co - m * si, l * si + m * co, n, 1];
-            // calculate projected coordinate
-            projectedCoords[j] = projected = [0, 0, 0, 0];
-            for (k in matrix) { // matrix has 16 elements
-                projected[~~(k / 4)] += transVertex[k % 4] * matrix[~~(k / 4) + k % 4 * 4];
+        lastVertex = null;
+        polygonPlayerCnt = 0;
+        while (j--) {           
+            vertexKey = polygons[i][j % polygonVertexCnt];
+            vertex = vertices[vertexKey];
+            // calculate projected vertex once per frame
+            if (vertex.pRdy4Frame != this.frameCnt) {
+                l = vertex.x; 
+                m = vertex.y;
+                n = vertex.z;   
+                vertex.translated = [l * co - m * si, l * si + m * co, n, 1];
+                // calculate projected coordinate
+                projected = [0, 0, 0, 0];
+                for (k in matrix) { // matrix has 16 elements
+                    projected[~~(k / 4)] += vertex.translated[k % 4] * matrix[~~(k / 4) + k % 4 * 4];
+                }
+                for (k in size) { // size has 2 elements
+                    projected[k] = (projected[k] / projected[3] / 2 + 0.5) * size[k];
+                }
+                
+                vertex.px = projected[0];
+                vertex.py =  this.h - projected[1];
+                vertex.pHash = 100000 * ~~vertex.px + ~~vertex.py;
+                vertex.pRdy4Frame = this.frameCnt;                             
             }
-            for (k in size) { // size has 2 elements
-                projected[k] = (projected[k] / projected[3] / 2 + 0.5) * size[k];
-            }
-            vertex.px = projected[0];
-            vertex.py = this.h - projected[1];
-            vertex.pHash = 100000 * ~~vertex.px + ~~vertex.py;
             
-            ctx.lineTo (vertex.px, vertex.py);
-            transp = 0.8 + (transVertex[0] + transVertex[1])/4; 
-            ctx.lineWidth = 0.3;
-            ctx.strokeStyle = 'hsla(0, 0%, 0%, ' + transp +')'; 
+            transp = 0.7 + (vertex.translated[0] + vertex.translated[1])/6;    
+            ctx.strokeStyle = 'hsla(0, 0%, 30%, ' + transp +')';  
+            ctx.beginPath();    
+            if (lastVertex) {
+                //transp = 0.7 + (vertex.translated[0] + vertex.translated[1] + lastVertex.translated[0] + lastVertex.translated[1])/8;  
+                ctx.lineTo(lastVertex.px, lastVertex.py);  
+                if (vertex.active != 0 && lastVertex.active === vertex.active) {
+                    hue =  this.getPlayerHue(vertex.active);
+                    
+                    ctx.strokeStyle = 'hsla(' + hue + ',99%, 50%, ' + transp +')';
+                } else {
+                    
+                }
+                polygonPlayerCnt += vertex.active;
+            } 
+            
+
+            ctx.lineTo(vertex.px, vertex.py);
             ctx.stroke();
             
-            // TODO gfx drawing needs cleanup (no time left until deadline 13:00 omg), draw vertex once (not for every face again)
-            if (vertex.active != 0) { 
-                hue =  this.getPlayerHue(vertex.active);
-                //transp = 0.6 + (transVertex[0] + transVertex[1])/4;  // 0.55 + vertex.active*Math.sin( new Date()/400)/2; //1.1 + si; //transVertex[0] + 1.2;
-                ctx.fillStyle = 'hsla(' + hue + ',99%, 60%, ' + transp +')';
-                ctx.fillRect(vertex.px-2, vertex.py-2, 4, 4);
-                
-                for (n in vertex.neighbours) {
-                    w = vertices[n];
-                    if (vertex.active != 0 && vertex.active === w.active) {
-                        //ctx.save();
-                        ctx.strokeStyle = ctx.fillStyle; 
-                        ctx.lineWidth = 2.0;
-                        ctx.beginPath();
-                        ctx.lineTo(w.px, w.py); 
-                        ctx.lineTo(vertex.px, vertex.py);                       
-                        ctx.stroke();
-                        //ctx.restore();
-                        //break;       
-                    }         
-                }  
-                
+            lastVertex = vertex;
+        } // ~while (j--) 
+        
+        // draw polygon fill, if it was conquered by one player
+        if (Math.abs(polygonPlayerCnt) === polygonVertexCnt) {         
+            ctx.beginPath();
+            j = polygonVertexCnt + 1;
+            while (j--) { 
+                vertexKey = polygons[i][j % polygonVertexCnt];
+                vertex = vertices[vertexKey]; 
+                ctx.lineTo(vertex.px, vertex.py); 
             }
-
-        } // while (j--) 
+            hue = this.getPlayerHue(vertex.active);
+            ctx.fillStyle = 'hsla(' + hue + ',99%, 50%, ' + 0.1 +')'; 
+            ctx.fill();    
+        }      
         
-        // show only counter clockwise projected polygons
-        k = projectedCoords[1];
-        l = projectedCoords[2];
-        
-        //if (this.wireframe || projectedCoords[0][0] * (k[1] - l[1]) + k[0] * l[1] > projectedCoords[0][1] * (k[0] - l[0]) + k[1] * l[0]) {
-  
-            //ctx.fill();           
-            //ctx.stroke();               
-        //}
+    } // ~while (i--)
+    
+    // draw vertices
+    i = polygons.length;
+    while (i--) {
+        polygonVertexCnt = polygons[i].length;
+        j = polygonVertexCnt + 1;
+        while (j--) {
+            // calculate rotated vertex
+            vertexKey = polygons[i][j % polygonVertexCnt];
+            vertex = vertices[vertexKey];
+            if (vertex.rendered4Frame != this.frameCnt) {
+                hue =  this.getPlayerHue(vertex.active);
+                transp = 0.9 + (vertex.translated[0] + vertex.translated[1])/6; 
+                ctx.fillStyle = 'hsla(0, 0%, 30%, ' + transp +')';
+                if (vertex.active != 0) {
+                    ctx.fillStyle = 'hsla(' + hue + ',99%, 50%, ' + transp +')';    
+                }
+                
+                ctx.beginPath();
+                ctx.arc(vertex.px, vertex.py, 3, 0, 2 * Math.PI, true);
+                ctx.fill();
+                vertex.rendered4Frame = this.frameCnt;
+            }
+        }
     }
     
     if (this.winText) {
         ctx.fillStyle = '#333'; 
-        ctx.fillText(this.winText, 400, 300);    
+        ctx.font = "60px arial";
+        ctx.fillText(this.winText, 400, 300); 
+        ctx.font = "20px arial";
+        ctx.fillText('Click to continue...', 400, 350);
+        ctx.font = "30px arial";    
     }
     
     if (this.hoveredVertex) {
         hue =  this.getPlayerHue(this.player);
-        ctx.fillStyle = 'hsla(' + hue + ',99%, 60%, 1.0)';
-        ctx.fillRect(this.hoveredVertex.px-2, this.hoveredVertex.py-2, 4, 4);
+        ctx.fillStyle = 'hsla(' + hue + ',99%, 50%, 1.0)';
+        ctx.beginPath();
+        ctx.arc(this.hoveredVertex.px, this.hoveredVertex.py, 3, 0, 2 * Math.PI, true);
+        ctx.fill();
     }
     
     this.r -= this.rSpeed;
+    
+    this.frameCnt++;
     window.requestAnimationFrame(function() { self.render();});   
 };    
     
 
 Game.prototype.eqTolerance = function(val1, val2, tolerance) {
     if (tolerance == null) {
-        tolerance = 6;    
+        tolerance = 8;    
     }        
     return (Math.abs(val1 - val2) <= tolerance);
 };
