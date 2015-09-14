@@ -2,6 +2,14 @@
 /*globals Game, console */
 'use strict';
 
+/**
+ * Solid generation code and adapters
+ * 
+ * My special thanks goes to Viktor Kovacs http://kovacsv.hu 
+ * for platonic/archimedean solid generation and projection code!
+ */
+
+
 Game.pushVertex = function(vertexMap, x, y, z) {    
     var key = Object.keys(vertexMap).length;
     //var key = 1000000*x + 1000*y + z;  
