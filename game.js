@@ -1,8 +1,12 @@
 /*jslint plusplus: true, eqeq: true, es5: true, regexp: true, bitwise: true  */
 /*globals Game, console */
+
+(function(window){
+    
 'use strict';
 
-var LOG = true;
+var Game = null, 
+    LOG = false;
   
 function log() {
     if (LOG) {      
@@ -11,24 +15,28 @@ function log() {
 } 
 
 /**
- * Vertex Connector 1.1
- * Connect the vertices of the solid. Try to surround the polygons to get extra points. Avoid your vertices becoming isolated.
+ * Vertex Connector 
+ * 
+ * A mini JS 3D Game written for the js13kGames competition 2015 (condition: zipped size &lt; 13 kb).
+ * Connect the vertices of the solid! Connect polygons to win extra points. Avoid your vertices becoming isolated.
  * 
  * My special thanks goes to Viktor Kovacs http://kovacsv.hu 
  * for platonic/archimedean solid generation and projection code!
  * 
- * Code needs a cleanup, but no time left unitl JS13kgames deadline 13:00 ....
+ * @author Oliver Güther
+ * @version 1.1
  * 
  */    
-var Game = function(canvas, menu) {
+Game = function(canvas, menu) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.ctx.font = "30px arial";
     this.menu = menu;
-    this.wireframe = true;
-    this.player = 1;
-    this.rSpeed = 0.005;   
-    this.r = 0;
+    this.player = 1;    
+    this.alpha = 0;
+    this.beta = 0;
+    this.alphaSpeed = 0.005; 
+    this.betaSpeed = 0.0;
     this.solidType = 0; 
     this.scorePlayer1 = 0;
     this.scorePlayer2 = 0; 
@@ -66,10 +74,13 @@ Game.prototype.init = function() {
         polygonVertexCnt,
         i, j, vertexId, tmpPolygon, nId, solidObj, item;  
      
+     // clear timeouts if running
      if (this.cmdQueueTimer) {
          window.clearTimeout(this.cmdQueueTimer);
-     }   
-    
+     }  
+     if (self.aiMoveTimer) {
+        window.clearTimeout(this.aiMoveTimer);    
+     }       
     
     // build solid object
     if (this.solidType === 0) {
@@ -153,11 +164,19 @@ Game.prototype.init = function() {
         }
         
         if (x > 600) {
-            self.rSpeed = -0.009;    
+            self.alphaSpeed = +(x-600) /6000;    
         } else if (x < 200) {
-            self.rSpeed = +0.009;     
+            self.alphaSpeed = +(x-200) /6000;     
         } else {
-            self.rSpeed = 0.0005;    
+            self.alphaSpeed = 0.0005;    
+        }
+
+        if (y > 520) {
+            self.betaSpeed = -0.009;    
+        } else if (y < 100) {
+            self.betaSpeed = +0.009;     
+        } else {
+            self.betaSpeed = 0.000;    
         }
     };
     
@@ -178,15 +197,16 @@ Game.prototype.init = function() {
             v = vertices[vKey];
             if (self.eqTolerance(v.px, x) && self.eqTolerance(v.py, y) && v.active === 0) {
                 
-                self.doMove(self.player, v);                
-                self.player *= -1;
-                
-                self.winCheck();  // (needed if solid vertices count is odd)
-                
-                log(self.aiMove(self.player, self.level-1));
-                self.player *= -1;
-                
-                self.winCheck();              
+                self.doMove(self.player, v); 
+                self.winCheck();  // (needed if solid vertices count is odd)               
+                               
+                self.aiMoveTimer = window.setTimeout(function(){
+
+                    self.player *= -1;                                  
+                    log(self.aiMove(self.player, self.level-1));
+                    self.winCheck(); 
+                    self.player *= -1;                                            
+                }, 350);                             
                 
                 //log('HIT ON ', x, y);  
                 break; 
@@ -430,7 +450,8 @@ Game.prototype.doMove = function(player, vertex) {
             player > 0 ? this.scorePlayer1+=polygon.length*Game.FACE_VALUE : this.scorePlayer2+=polygon.length*Game.FACE_VALUE;     
         }
     }
-            
+    
+    this.lastMoveMarkRadius = 48;     
 };
 
 
@@ -451,16 +472,19 @@ Game.prototype.movesLeft = function() {
 Game.prototype.render = function() {
     
     var self = this, 
-        r = this.r,
+        alpha = this.alpha,
+        beta = this.beta,
         ctx = this.ctx,
         vertices = this.vertices,
         polygons = this.polygons, 
         polygonVertexCnt,
-        si = Math.sin (r),
-        co = Math.cos (r),    
+        sinA = Math.sin(alpha),
+        cosA = Math.cos(alpha),
+        sinB = Math.sin(beta),
+        cosB = Math.cos(beta),     
         matrix = this.matrix,
         size = this.size,
-        i, j, k, l, m, n, 
+        i, j, k, l, m, n, x1, y1, z1, x2, y2, z2, y3, z3, x4, y4, z4,
         vertex, transVertex, projected, projectedCoords,
         vertexKey, hue, transp, w, lastVertex, polygonPlayerCnt;
             
@@ -492,10 +516,20 @@ Game.prototype.render = function() {
             vertex = vertices[vertexKey];
             // calculate projected vertex once per frame
             if (vertex.pRdy4Frame != this.frameCnt) {
-                l = vertex.x; 
-                m = vertex.y;
-                n = vertex.z;   
-                vertex.translated = [l * co - m * si, l * si + m * co, n, 1];
+                x1 = vertex.x; 
+                y1 = vertex.y;
+                z1 = vertex.z;  
+                // rotate z axis 
+                x2 = x1 * cosA - y1 * sinA;
+                y2 = x1 * sinA + y1 * cosA;
+                // rotate x axis
+                y3 = y2 * cosB - z1 * sinB;
+                z3 = y2 * sinB + z1 * cosB;
+                vertex.translated = [x2, y3, z3, 1];
+                //x4 = x2 * cosA - z3 * sinA;
+                //z4 = x2 * sinA + z3 * cosA;
+                //vertex.translated = [x4, y3, z4, 1];                               
+                
                 // calculate projected coordinate
                 projected = [0, 0, 0, 0];
                 for (k in matrix) { // matrix has 16 elements
@@ -507,7 +541,6 @@ Game.prototype.render = function() {
                 
                 vertex.px = projected[0];
                 vertex.py =  this.h - projected[1];
-                vertex.pHash = 100000 * ~~vertex.px + ~~vertex.py;
                 vertex.pRdy4Frame = this.frameCnt;                             
             }
             
@@ -521,9 +554,7 @@ Game.prototype.render = function() {
                     hue =  this.getPlayerHue(vertex.active);
                     
                     ctx.strokeStyle = 'hsla(' + hue + ',99%, 50%, ' + transp +')';
-                } else {
-                    
-                }
+                } 
                 polygonPlayerCnt += vertex.active;
             } 
             
@@ -534,7 +565,7 @@ Game.prototype.render = function() {
             lastVertex = vertex;
         } // ~while (j--) 
         
-        // draw polygon fill, if it was conquered by one player
+        // fill polygon, if it was conquered by one player
         if (Math.abs(polygonPlayerCnt) === polygonVertexCnt) {         
             ctx.beginPath();
             j = polygonVertexCnt + 1;
@@ -570,6 +601,14 @@ Game.prototype.render = function() {
                 ctx.beginPath();
                 ctx.arc(vertex.px, vertex.py, 3, 0, 2 * Math.PI, true);
                 ctx.fill();
+                
+                if (this.lastMoveMarkRadius && this.moveStack.length > 0 && vertex === this.moveStack[this.moveStack.length-1].vertex) {
+                    this.lastMoveMarkRadius--;
+                    ctx.beginPath();
+                    ctx.arc(vertex.px, vertex.py, this.lastMoveMarkRadius/8, 0, 2 * Math.PI, true);
+                    ctx.fill();
+                }
+                
                 vertex.rendered4Frame = this.frameCnt;
             }
         }
@@ -591,8 +630,9 @@ Game.prototype.render = function() {
         ctx.arc(this.hoveredVertex.px, this.hoveredVertex.py, 3, 0, 2 * Math.PI, true);
         ctx.fill();
     }
-    
-    this.r -= this.rSpeed;
+   
+    this.alpha += this.alphaSpeed;
+    this.beta += this.betaSpeed;
     
     this.frameCnt++;
     window.requestAnimationFrame(function() { self.render();});   
@@ -617,5 +657,7 @@ Game.prototype.getPlayerHue = function(player) {
 };
 
 
+window.Game = Game;
 
+}(window));
 
