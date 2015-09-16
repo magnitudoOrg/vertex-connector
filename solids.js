@@ -1,6 +1,5 @@
 /*jslint plusplus: true, eqeq: true, es5: true, regexp: true, bitwise: true  */
 /*globals Game, console */
-'use strict';
 
 /**
  * Solid generation code and adapters
@@ -8,6 +7,9 @@
  * My special thanks goes to Viktor Kovacs http://kovacsv.hu 
  * for platonic/archimedean solid generation and projection code!
  */
+(function(window){
+    
+'use strict';
 
 
 Game.pushVertex = function(vertexMap, x, y, z) {    
@@ -422,3 +424,5 @@ Game.generateRhombicuboctahedron = function ()
 
     return {vertices: vArr, polygons: pArr};
 };
+
+}(window));
